@@ -89,11 +89,11 @@ pnpm -s --config.shell-emulator=true --dir "$checkout" chemdraft export --batch 
 CDXML exports may follow a house style. `--style-reference` names a CDXML
 file whose bond length, line widths, hash and bond spacing, chain angle and
 label font, size and face the export copies; the molecule is scaled to that
-bond length and the file declares those settings. The owner can set a default
-with `CHEMDRAFT_CDXML_STYLE_REFERENCE` (see [setup](setup.md)); MCP
-`export_structure` then applies it to every CDXML export and reports
+bond length and the file declares those settings. The owner's default style
+is `~/.config/chemdraft/cdxml-style.cdxml` (see [setup](setup.md)); CLI and
+MCP `export_structure` apply it to every CDXML export and report
 `styleReference`. Report any warning naming settings the reference left
-unset. Do not set or change the default yourself.
+unset. Do not create, replace or edit the default style file yourself.
 
 ```sh
 pnpm -s --config.shell-emulator=true --dir "$checkout" chemdraft export --smiles 'CCO' --out "$scratch/ethanol.cdxml" --style-reference "$scratch/house-style.cdxml"

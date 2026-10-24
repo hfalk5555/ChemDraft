@@ -131,15 +131,29 @@ macOS and `%APPDATA%\Claude\` on Windows. Restart the client after editing.
 ```
 
 To give every CDXML export a house style (bond length, line widths, label
-font and size), point `CHEMDRAFT_CDXML_STYLE_REFERENCE` at a CDXML file saved
-in that style, in the server's environment. Claude Code:
+font and size), save a CDXML file in that style as the default style file.
+No client configuration is needed: the CLI and MCP server look for it in the
+account's ChemDraft settings folder, beside the plugin trust file.
+
+- macOS: `~/.config/chemdraft/cdxml-style.cdxml`
+- Windows: `%USERPROFILE%\.config\chemdraft\cdxml-style.cdxml`
+
+macOS:
 
 ```sh
-claude mcp add --scope user -e CHEMDRAFT_CDXML_STYLE_REFERENCE="<style-file.cdxml>" chemdraft -- pnpm -s --dir "<checkout>" chemdraft-mcp
+mkdir -p "$HOME/.config/chemdraft"
+cp "<style-file.cdxml>" "$HOME/.config/chemdraft/cdxml-style.cdxml"
 ```
 
-In Claude Desktop or Codex configuration, add the same variable to the
-server's `env`. The CLI reads it too; `--style-reference` overrides it.
+Windows PowerShell:
+
+```powershell
+New-Item -ItemType Directory -Force "$HOME\.config\chemdraft"
+Copy-Item "<style-file.cdxml>" "$HOME\.config\chemdraft\cdxml-style.cdxml"
+```
+
+`CHEMDRAFT_CDXML_STYLE_REFERENCE` in a server's environment overrides the
+default file, and the CLI's `--style-reference` overrides both.
 
 GUI clients may have a different PATH from your terminal. If `pnpm` is not
 found, set `command` to its full executable path. On Windows, if the client

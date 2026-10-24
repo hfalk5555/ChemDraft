@@ -1,5 +1,5 @@
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, userInfo } from "node:os";
 import { basename, dirname, extname, join, resolve } from "node:path";
 
 import {
@@ -69,8 +69,24 @@ interface ParsedArguments {
 }
 
 /** Names a CDXML file whose drawing settings every CDXML export uses unless --style-reference
- *  names another. Set it in the MCP server's environment to give agent exports a house style. */
+ *  names another. It overrides the default style file below. */
 export const CDXML_STYLE_REFERENCE_ENV = "CHEMDRAFT_CDXML_STYLE_REFERENCE";
+
+/**
+ * The per-user default style reference, `~/.config/chemdraft/cdxml-style.cdxml` beside the plugin
+ * trust file: a CDXML export with no --style-reference and no environment override uses it when it
+ * exists. The home directory comes from the OS account (`os.userInfo().homedir`), as for the trust
+ * file, so every client that launches the CLI or MCP server finds the same file without being
+ * configured. `lookup` is a seam for tests. An undeterminable home directory means no default.
+ */
+export function resolveDefaultCdxmlStylePath(lookup: () => { homedir: string } = userInfo): string | undefined {
+  try {
+    const home = lookup().homedir;
+    return home ? join(home, ".config", "chemdraft", "cdxml-style.cdxml") : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 const MAX_STYLE_REFERENCE_BYTES = 5 * 1024 * 1024;
 
@@ -101,8 +117,9 @@ Options:
                                     chain angle and label font, size and face from this CDXML file
   --help                            Print this help
 
-Environment:
-  ${CDXML_STYLE_REFERENCE_ENV}    Default --style-reference for every CDXML export
+Default style:
+  A CDXML export without --style-reference uses ${CDXML_STYLE_REFERENCE_ENV} when set, otherwise
+  ~/.config/chemdraft/cdxml-style.cdxml when that file exists.
 
 Output:
   One JSON line per structure is written to stdout. Progress is written to stderr.
@@ -179,13 +196,27 @@ function withStyleReference(parsed: ParsedArguments, styleReference: string | un
   return { ...parsed, styleReference };
 }
 
-/** The reference this export uses: the option, else the environment default, and only for CDXML. */
-function styleReferencePath(parsed: ParsedArguments, env: NodeJS.ProcessEnv): { path: string; source: string } | undefined {
+/** The reference this export uses, CDXML only: the option, else the environment override, else
+ *  the per-user default style file when it exists. A missing default file means no style. */
+async function styleReferencePath(
+  parsed: ParsedArguments,
+  env: NodeJS.ProcessEnv,
+  defaultStylePath: string | null
+): Promise<{ path: string; source: string } | undefined> {
   if (parsed.styleReference !== undefined) return { path: parsed.styleReference, source: "--style-reference" };
+  if (parsed.format !== "cdxml") return undefined;
   const configured = env[CDXML_STYLE_REFERENCE_ENV]?.trim();
-  if (!configured || parsed.format !== "cdxml") return undefined;
-  const expanded = configured === "~" || configured.startsWith("~/") ? join(homedir(), configured.slice(1)) : configured;
-  return { path: resolve(expanded), source: CDXML_STYLE_REFERENCE_ENV };
+  if (configured) {
+    const expanded = configured === "~" || configured.startsWith("~/") ? join(homedir(), configured.slice(1)) : configured;
+    return { path: resolve(expanded), source: CDXML_STYLE_REFERENCE_ENV };
+  }
+  if (defaultStylePath === null) return undefined;
+  try {
+    await stat(defaultStylePath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+  }
+  return { path: defaultStylePath, source: "default style file" };
 }
 
 /** Read a CDXML style reference, failing the whole run (exit 2) with the reason when it cannot be used. */
@@ -560,7 +591,9 @@ async function runCombinedExport(
 export async function runExportCommand(
   argv: readonly string[],
   io: CliIo = defaultCliIo,
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
+  // null: no default style file. Not `undefined`, which would select the account's real one.
+  defaultStylePath: string | null = resolveDefaultCdxmlStylePath() ?? null
 ): Promise<CliExitCode> {
   try {
     const parsed = parseArguments(argv);
@@ -569,7 +602,7 @@ export async function runExportCommand(
       return cliExitCode.ok;
     }
 
-    const referencePath = styleReferencePath(parsed, env);
+    const referencePath = await styleReferencePath(parsed, env, defaultStylePath);
     const styleReference = referencePath === undefined ? undefined
       : await loadStyleReference(referencePath.path, referencePath.source);
 
